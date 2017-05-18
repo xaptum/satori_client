@@ -1,0 +1,20 @@
+{application, 'satori_client',
+ [{description, "An OTP application"},
+  {vsn, "1.0"},
+  {registered, []},
+  {mod, {'satori_client_app', []}},
+  {applications,
+   [kernel,
+    stdlib,
+    crypto,
+    ssl,
+    jsxn,
+    websocket_client
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {contributors, []},
+  {licenses, []},
+  {links, []}
+ ]}.

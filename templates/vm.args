@@ -1,0 +1,2 @@
+-sname satori_client
+-setcookie {{ erlang_cookie }}
