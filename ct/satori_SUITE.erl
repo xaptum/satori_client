@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 18. May 2017 8:53 AM
 %%%-------------------------------------------------------------------
--module(publisher_SUITE).
+-module(satori_SUITE).
 -author("iguberman").
 
 -include_lib("common_test/include/ct.hrl").
@@ -14,9 +14,12 @@
 %% API
 -export([all/0,
   init_per_suite/1,
-  test_publisher/1]).
+  test_publisher/1,
+  test_subscriber/1]).
 
-all() -> [test_publisher].
+
+
+all() -> [test_publisher, test_subscriber].
 
 init_per_suite(Config)->
   lager:start(),
@@ -26,8 +29,13 @@ init_per_suite(Config)->
 test_publisher(Config)->
   ct:print("Sending messages!"),
   catch satori_publisher:publish("I'm not JSON!"),
-  satori_publisher:publish("{ \"msg\" : \"Neo says arf2!\"}"),
-  satori_publisher:publish(jsxn:encode(#{<<"msg">> => <<"Zoomies2">>})),
-  satori_publisher:publish(jsxn:encode(#{<<"msg">> => <<"Bezoomies3">>})),
-  timer:sleep(5000),
+  satori_publisher:publish("{ \"temp\" : 75, \"msg\" : \"Neo says arf2!\"}"),
+  satori_publisher:publish(jsxn:encode(#{<<"temp">> => 100, <<"msg">> => <<"Zoomies2">>})),
+  satori_publisher:publish(jsxn:encode(#{<<"temp">> => 120, <<"msg">> => <<"Bezoomies3">>})),
+  timer:sleep(10000),
+  ok.
+
+test_subscriber(Config)->
+  Channel = os:getenv("SATORI_CHANNEL"),
+  satori_subscriber:subscribe(Channel),
   ok.
