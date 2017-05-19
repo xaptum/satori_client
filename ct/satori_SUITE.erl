@@ -19,7 +19,7 @@
 
 
 
-all() -> [test_publisher, test_subscriber].
+all() -> [test_subscriber, test_publisher].
 
 init_per_suite(Config)->
   lager:start(),

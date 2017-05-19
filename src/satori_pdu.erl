@@ -32,6 +32,7 @@
   view_subscribe_request/3,
   parse_subscribe_response/2,
   parse_subscription/1,
+  parse_channel_data/1,
   unsubscribe_request/2,
   parse_unsubscribe_response/2]).
 
@@ -219,12 +220,18 @@ subscribe_header(RequestId) ->
   #{<<"action">> => <<"rtm/subscribe">>, <<"id">> => RequestId}.
 
 parse_subscribe_response(RequestId, Resp) ->
-  parse_subscribe_response_decoded(jsxn:decode(Resp), RequestId).
+  parse_subscribe_response_decoded(RequestId, jsxn:decode(Resp)).
 
 parse_subscribe_response_decoded(RequestId,
     #{<<"action">> := <<"rtm/subscribe/ok">>,
       <<"id">> := RequestId,
-      <<"body">> := #{<<"position">> := Position, <<"subscription_id">> := SubscriptionId}}) ->
+      <<"body">> := #{<<"next">> := Position, <<"channel">> := Channel}}) ->
+  {ok, {Position, Channel}};
+parse_subscribe_response_decoded(RequestId,
+    #{<<"action">> := <<"rtm/subscribe/ok">>,
+      <<"id">> := OtherRequestId,
+      <<"body">> := #{<<"next">> := Position, <<"subscription_id">> := SubscriptionId}}) ->
+  lager:warning("RequestId is ~p, but response requestId is ~p", [RequestId, OtherRequestId]),
   {ok, {Position, SubscriptionId}};
 parse_subscribe_response_decoded(RequestId,
     #{<<"action">> := <<"rtm/subscribe/error">>,
@@ -239,6 +246,45 @@ get_reason(#{<<"reason">> := Reason}) when is_binary(Reason) -> binary_to_list(R
 get_reason(#{<<"reason">> := Reason}) when is_list(Reason) -> Reason;
 get_reason(_RespBody) -> <<"Reason not specified">>.
 
+
+%%====================================================================
+%% CHANNEL SUBSCRIPTION PDU
+%%====================================================================
+
+
+parse_channel_data(ChannelData) ->
+  parse_channel_data_decoded(jsxn:decode(ChannelData)).
+
+
+parse_channel_data_decoded(
+    #{<<"action">> := <<"rtm/channel/data">>,
+      <<"body">> := #{
+        <<"next">> := Position,
+        <<"messages">> := Messages,
+        <<"channel">> := SubscriptionId}}) ->
+  {data, {Position, Messages, SubscriptionId}};
+parse_channel_data_decoded(#{
+  <<"action">> := <<"rtm/channel/info">>,
+  <<"body">> := #{
+    <<"info">> := InfoType,
+    <<"reason">> := InfoReason,
+    <<"next">> := Position,
+    <<"channel">> := SubscriptionId} = InfoBody}) ->
+  MissedMessageCount = get_missed_message_count(InfoBody),
+  {info, {Position, {InfoType, InfoReason, MissedMessageCount}, SubscriptionId}};
+parse_channel_data_decoded(#{
+  <<"action">> := <<"rtm/channel/error">>,
+  <<"body">> := #{
+    <<"error">> := ErrorName,
+    <<"reason">> := ErrorReason,
+    <<"next">> := Position,
+    <<"channel">> := SubscriptionId} = ErrorBody}) ->
+  MissedMessageCount = get_missed_message_count(ErrorBody),
+  {error, {Position, {ErrorName, ErrorReason, MissedMessageCount}, SubscriptionId}};
+parse_channel_data_decoded(#{<<"action">> := _NonSubscriptionAction} = OtherResponse) ->
+  {other, OtherResponse}.
+
+
 %%====================================================================
 %% SUBSCRIPTION PDU
 %%====================================================================
@@ -249,26 +295,26 @@ parse_subscription(Subscription) ->
 parse_subscription_decoded(
     #{<<"action">> := <<"rtm/subscription/data">>,
       <<"body">> := #{
-    <<"position">> := Position,
-      <<"messages">> := Messages,
-      <<"subscription_id">> := SubscriptionId}}) ->
+        <<"next">> := Position,
+        <<"messages">> := Messages,
+        <<"channel">> := SubscriptionId}}) ->
   {data, {Position, Messages, SubscriptionId}};
 parse_subscription_decoded(#{
   <<"action">> := <<"rtm/subscription/info">>,
   <<"body">> := #{
     <<"info">> := InfoType,
     <<"reason">> := InfoReason,
-    <<"position">> := Position,
+    <<"next">> := Position,
     <<"subscription_id">> := SubscriptionId} = InfoBody}) ->
   MissedMessageCount = get_missed_message_count(InfoBody),
   {info, {Position, {InfoType, InfoReason, MissedMessageCount}, SubscriptionId}};
 parse_subscription_decoded(#{
   <<"action">> := <<"rtm/subscription/error">>,
   <<"body">> := #{
-  <<"error">> := ErrorName,
-  <<"reason">> := ErrorReason,
-  <<"position">> := Position,
-  <<"subscription_id">> := SubscriptionId} = ErrorBody}) ->
+    <<"error">> := ErrorName,
+    <<"reason">> := ErrorReason,
+    <<"next">> := Position,
+    <<"subscription_id">> := SubscriptionId} = ErrorBody}) ->
   MissedMessageCount = get_missed_message_count(ErrorBody),
   {error, {Position, {ErrorName, ErrorReason, MissedMessageCount}, SubscriptionId}};
 parse_subscription_decoded(#{<<"action">> := _NonSubscriptionAction} = OtherResponse) ->
@@ -347,9 +393,9 @@ read_response_decoded(RequestId, #{
 %% DELETE PDU
 %%====================================================================
 
-delete_request(RequestId, Channel) when is_list(Channel)->
+delete_request(RequestId, Channel) when is_list(Channel) ->
   delete_request(RequestId, list_to_binary(Channel));
-delete_request(RequestId, Channel) when is_binary(Channel)->
+delete_request(RequestId, Channel) when is_binary(Channel) ->
   jsxn:encode(#{<<"action">> => <<"rtm/delete">>, <<"id">> => RequestId,
     <<"body">> => #{<<"channel">> => Channel}}).
 
@@ -357,8 +403,8 @@ delete_response(RequestId, Resp) ->
   delete_response_decoded(RequestId, jsxn:decode(Resp)).
 
 delete_response_decoded(RequestId, #{
-    <<"action">> := <<"rtm/delete/ok">>,
-    <<"id">> := RequestId, <<"body">> := RespBody}) when is_map(RespBody) ->
+  <<"action">> := <<"rtm/delete/ok">>,
+  <<"id">> := RequestId, <<"body">> := RespBody}) when is_map(RespBody) ->
   Position = get_position(RespBody),
   {ok, Position};
 delete_response_decoded(RequestId,

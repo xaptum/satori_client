@@ -66,7 +66,7 @@ handle_cast({subscribe, Channel},
   {ok, SubscribeReq} = satori_pdu:subscribe_request(RequestId, Channel),
   lager:info("SUBSCRIBING to ~p: ~p", [Channel, SubscribeReq]),
   satori_client:send_request(WebsocketPid, SubscribeReq),
-  {noreply, State#state{status = subscribing, sub_id = Channel, channel = Channel}};
+  {noreply, State#state{status = subscribing, sub_id = list_to_binary(Channel), channel = list_to_binary(Channel)}};
 handle_cast({subscribe, {SubscriptionId, SQL}},
     #state{websocket_pid = WebsocketPid, status = ready, request_id = RequestId} = State) ->
   {ok, SubscribeReq} = satori_pdu:view_subscribe_request(RequestId, SubscriptionId, SQL),
@@ -90,6 +90,9 @@ handle_cast({on_message, SubscribeResponse}, #state{status = subscribing, sub_id
     {ok, {Position, SubscriptionId}} ->
       lager:info("SUBSCRIBE SUCCESS at ~p for subscription_id ~p", [Position, SubscriptionId]),
       {noreply, State#state{position = Position, request_id = RequestId + 1, status = subscribed}};
+    {ok, {Position, OtherSubscriptionId}} ->
+      lager:info("SUBSCRIBE SUCCESS at ~p for OTHER! subscription_id ~p", [Position, OtherSubscriptionId]),
+      {noreply, State#state{position = Position, sub_id = OtherSubscriptionId, request_id = RequestId + 1, status = subscribed}};
     {error, {{Error, Reason}, SubscriptionId}} ->
       lager:error("Failed to parse subscribe response ~p, error: ~p", [SubscribeResponse, Error]),
       {stop, Reason, State};
@@ -98,7 +101,7 @@ handle_cast({on_message, SubscribeResponse}, #state{status = subscribing, sub_id
       {noreply, State}
   end;
 handle_cast({on_message, Subscription}, #state{message_handler = MessageHandler, status = subscribed, sub_id = SubscriptionId} = State) ->
-  case satori_pdu:parse_subscription(Subscription) of
+  case satori_pdu:parse_channel_data(Subscription) of
     {data, {_Position, Messages, SubscriptionId}} ->
       MessageHandler:process_messages(Messages);
     {info, {_Position, {_InfoType, _InfoReason, _MissedMessageCount} = Info, SubscriptionId}} ->

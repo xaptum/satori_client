@@ -18,14 +18,14 @@
   process_error/1]).
 
 process_messages(Messages) when is_list(Messages)->
-  lager:info("Got ~b test messages:", [length(Messages)]),
-  [lager:info("~p", [jsxn:decode(Message)]) || Message <- Messages],
+  ct:print("Got ~b test messages:", [length(Messages)]),
+  [ct:print("~p", [jsxn:decode(Message)]) || Message <- Messages],
   ok.
 
 process_info({InfoType, InfoReason, MissedMessageCount}) ->
-  lager:info("Test Subscription Info: Type ~p,  Reason ~p, MissedMessageCount ~b", [InfoType, InfoReason, MissedMessageCount]).
+  ct:print("Test Subscription Info: Type ~p,  Reason ~p, MissedMessageCount ~b", [InfoType, InfoReason, MissedMessageCount]).
 
 process_error({ErrorName, ErrorReason, MissedMessageCount}) ->
-  lager:warning("Test Subsciprion Error: Name ~p, Reason ~p, MissedMessageCount ~b", [ErrorName, ErrorReason, MissedMessageCount]).
+  ct:print("Test Subsciprion Error: Name ~p, Reason ~p, MissedMessageCount ~b", [ErrorName, ErrorReason, MissedMessageCount]).
 
 
