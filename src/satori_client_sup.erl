@@ -15,6 +15,13 @@
 
 -define(SERVER, ?MODULE).
 
+-define(SUPERVISOR(Type),
+  #{id => Type,
+  type => supervisor,
+  start => {Type, start_link, []},
+  restart => permanent,
+  shutdown => 1000}).
+
 %%====================================================================
 %% API functions
 %%====================================================================
@@ -29,13 +36,11 @@ start_link() ->
 %% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
 init([]) ->
 
-  Children = [#{id => Type,
-    start => {Type, start_link, []},
-    restart => permanent,
-    shutdown => 1000} || Type <- [satori_publisher, satori_subscriber, satori_key_value_store],
-    application:get_env(satori_client, Type, false)],
-
-  lager:info("Starting satori clients: ~p", [Children]),
+  Children = [
+    ?SUPERVISOR(satori_websocket_sup),
+    ?SUPERVISOR(satori_publisher_sup),
+    ?SUPERVISOR(satori_subscriber_sup),
+    ?SUPERVISOR(satori_key_value_store_sup)],
 
   %% Restart Strategy
   RestartStrategy = {one_for_one, 4, 3600},

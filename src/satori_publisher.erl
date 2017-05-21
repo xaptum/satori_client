@@ -23,28 +23,19 @@
 
 %% API
 -export([
-  publish/1,
   publish/2,
-  start_link/0,
   start_link/1
 ]).
 
-publish(PublisherPid, Message) ->
-  gen_server:cast(PublisherPid, {publish, Message}).
+publish(Role, Message) ->
+  gen_server:cast(satori_client:publisher_name(Role), {publish, Message}).
 
-publish(Message) ->
-  gen_server:cast(?MODULE, {publish, Message}).
+start_link(Role) ->
+  gen_server:start_link({local, satori_client:publisher_name(Role)}, ?MODULE, [Role], []).
 
-start_link() ->
-  gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-
-start_link(PublisherId) ->
-  gen_server:start_link({local, PublisherId}, ?MODULE, [], []).
-
-init([]) ->
-  {ok, SatoriClientPid} = satori_client:start_link(self()),
-  Channel = os:getenv("SATORI_CHANNEL"),
-  {ok, #state{websocket_pid = SatoriClientPid, channel = Channel, status = connecting, request_id = 3}}.
+init([Role]) ->
+  {ok, WebsocketPid} = supervisor:start_child(satori_websocket_sup, [satori_publisher, Role]),
+  {ok, #state{websocket_pid = WebsocketPid, channel = Role, status = connecting, request_id = 3}}.
 
 handle_call(_Request, _From, State) ->
   lager:warning("Don't know how to handle_call(~p, ~p, ~p)", [_Request, _From, State]),
@@ -56,7 +47,7 @@ handle_cast({publish, Message}, #state{websocket_pid = WebsocketPid, channel = C
   case satori_pdu:publish_request(RequestId, Message, Channel) of
     {ok, PublishReq} ->
       lager:info("PUBLISHING: ~p", [PublishReq]),
-      satori_client:send_request(WebsocketPid, PublishReq),
+      satori_websocket:send_request(WebsocketPid, PublishReq),
       {noreply, State#state{status = publishing}};
     {error, Error} ->
       lager:error("Error publishing message ~p: ~p", [Message, Error]),

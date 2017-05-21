@@ -16,6 +16,7 @@ compile:
 
 recompile:
 	find . -name ebin | xargs rm -rf
+	rm -f ct/*.beam
 	$(REBAR) compile
 
 ct-run:

@@ -27,33 +27,28 @@
 
 %% API
 -export([
-  subscribe/1,
   subscribe/2,
-  unsubscribe/1,
-  start_link/0,
+  subscribe/3,
+  unsubscribe/2,
   start_link/1
 ]).
 
+subscribe(Role, Channel) ->
+  gen_server:cast(satori_client:subscriber_name(Role), {subscribe, Channel}).
 
-subscribe(Channel) ->
-  gen_server:cast(?MODULE, {subscribe, Channel}).
+subscribe(Role, SubscriptionId, SQL) ->
+  gen_server:cast(satori_client:subscriber_name(Role), {subscribe, {SubscriptionId, SQL}}).
 
-subscribe(SubscriptionId, SQL) ->
-  gen_server:cast(?MODULE, {subscribe, {SubscriptionId, SQL}}).
+unsubscribe(Role, SubscriptionId) ->
+  gen_server:cast(satori_client:subscriber_name(Role), {unsubscribe, SubscriptionId}).
 
-unsubscribe(SubscriptionId) ->
-  gen_server:cast(?MODULE, {unsubscribe, SubscriptionId}).
+start_link(Role) ->
+  gen_server:start_link({local, satori_client:subscriber_name(Role)}, ?MODULE, [Role], []).
 
-start_link() ->
-  gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-
-start_link(SubscriberId) ->
-  gen_server:start_link({local, SubscriberId}, ?MODULE, [], []).
-
-init([]) ->
-  {ok, SatoriClientPid} = satori_client:start_link(self()),
+init([Role]) ->
+  {ok, WebsocketPid} = supervisor:start_child(satori_websocket_sup, [satori_subscriber, Role]),
   {ok, MessageHandler} = application:get_env(message_handler),
-  {ok, #state{message_handler = MessageHandler, websocket_pid = SatoriClientPid, status = connecting, request_id = 3}}.
+  {ok, #state{message_handler = MessageHandler, websocket_pid = WebsocketPid, status = connecting, request_id = 3}}.
 
 handle_call(_Request, _From, State) ->
   lager:warning("Don't know how to handle_call(~p, ~p, ~p)", [_Request, _From, State]),
@@ -65,13 +60,13 @@ handle_cast({subscribe, Channel},
     #state{websocket_pid = WebsocketPid, status = ready, request_id = RequestId} = State) ->
   {ok, SubscribeReq} = satori_pdu:subscribe_request(RequestId, Channel),
   lager:info("SUBSCRIBING to ~p: ~p", [Channel, SubscribeReq]),
-  satori_client:send_request(WebsocketPid, SubscribeReq),
+  satori_websocket:send_request(WebsocketPid, SubscribeReq),
   {noreply, State#state{status = subscribing, sub_id = list_to_binary(Channel), channel = list_to_binary(Channel)}};
 handle_cast({subscribe, {SubscriptionId, SQL}},
     #state{websocket_pid = WebsocketPid, status = ready, request_id = RequestId} = State) ->
   {ok, SubscribeReq} = satori_pdu:view_subscribe_request(RequestId, SubscriptionId, SQL),
   lager:info("SUBSCRIBING to view ~p with SQL ~p: ~p", [SubscriptionId, SQL, SubscribeReq]),
-  satori_client:send_request(WebsocketPid, SubscribeReq),
+  satori_websocket:send_request(WebsocketPid, SubscribeReq),
   {noreply, State#state{status = subscribing, sub_id = SubscriptionId}};
 handle_cast({subscribe, _SubscribeInfo} = Req, #state{status = connecting} = State) ->
   lager:warning("Got subscribe request while still connecting, retrying in 500ms"),
@@ -82,7 +77,7 @@ handle_cast({unsubscribe, SubscriptionId} = Req,
     #state{websocket_pid = WebsocketPid, status = subscribed, request_id = RequestId, sub_id = SubscriptionId} = State) ->
   {ok, UnsubscribeReq} = satori_pdu:unsubscribe_request(RequestId, SubscriptionId),
   lager:warning("UNSUBSCRIBING ~p: ~p", [SubscriptionId, UnsubscribeReq]),
-  satori_client:send_request(WebsocketPid, UnsubscribeReq),
+  satori_websocket:send_request(WebsocketPid, UnsubscribeReq),
   {noreply, State#state{status = unsubscribing}};
 %% we don't expect any other type of message from satori, but publish response
 handle_cast({on_message, SubscribeResponse}, #state{status = subscribing, sub_id = SubscriptionId, request_id = RequestId} = State) ->
