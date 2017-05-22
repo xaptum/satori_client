@@ -42,7 +42,7 @@ test_publisher(Config) ->
   satori_publisher:publish(TestRole, "{ \"temp\" : 75, \"msg\" : \"Neo says arf2!\"}"),
   satori_publisher:publish(TestRole, jsxn:encode(#{<<"temp">> => 100, <<"msg">> => <<"Zoomies2">>})),
   satori_publisher:publish(TestRole, jsxn:encode(#{<<"temp">> => 120, <<"msg">> => <<"Bezoomies3">>})),
-  timer:sleep(10000),
+  timer:sleep(20000),
   ok.
 
 test_subscriber(Config) ->

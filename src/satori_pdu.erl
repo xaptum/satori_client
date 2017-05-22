@@ -21,7 +21,7 @@
   publish_request/3,
   write_request/3,
   get_position_from_publish_response/2,
-  get_position_from_write_response/2,
+  write_response/2,
   read_request/2,
   read_request/3,
   read_response/2,
@@ -135,16 +135,15 @@ get_position_from_publish_response_decoded(RequestId, #{
   <<"body">> := #{<<"error">> := Error, <<"reason">> := Reason}}) ->
   {error, {Error, Reason}}.
 
-get_position_from_write_response(RequestId, Resp) ->
-  {ok, Position} = get_position_from_write_response_decoded(RequestId, jsxn:decode(Resp)),
-  Position.
+write_response(RequestId, Resp) ->
+  write_response_decoded(RequestId, jsxn:decode(Resp)).
 
-get_position_from_write_response_decoded(RequestId, #{
+write_response_decoded(RequestId, #{
   <<"action">> := <<"rtm/write/ok">>,
   <<"id">> := RequestId,
   <<"body">> := #{<<"next">> := Position}}) ->
   {ok, Position};
-get_position_from_write_response_decoded(RequestId, #{
+write_response_decoded(RequestId, #{
   <<"action">> := <<"rtm/write/ok">>,
   <<"id">> := RequestId,
   <<"body">> := #{<<"error">> := Error, <<"reason">> := Reason}}) ->
@@ -251,10 +250,8 @@ get_reason(_RespBody) -> <<"Reason not specified">>.
 %% CHANNEL SUBSCRIPTION PDU
 %%====================================================================
 
-
 parse_channel_data(ChannelData) ->
   parse_channel_data_decoded(jsxn:decode(ChannelData)).
-
 
 parse_channel_data_decoded(
     #{<<"action">> := <<"rtm/channel/data">>,
@@ -284,7 +281,6 @@ parse_channel_data_decoded(#{
 parse_channel_data_decoded(#{<<"action">> := _NonSubscriptionAction} = OtherResponse) ->
   {other, OtherResponse}.
 
-
 %%====================================================================
 %% SUBSCRIPTION PDU
 %%====================================================================
@@ -295,9 +291,9 @@ parse_subscription(Subscription) ->
 parse_subscription_decoded(
     #{<<"action">> := <<"rtm/subscription/data">>,
       <<"body">> := #{
-        <<"next">> := Position,
-        <<"messages">> := Messages,
-        <<"channel">> := SubscriptionId}}) ->
+    <<"next">> := Position,
+      <<"messages">> := Messages,
+      <<"channel">> := SubscriptionId}}) ->
   {data, {Position, Messages, SubscriptionId}};
 parse_subscription_decoded(#{
   <<"action">> := <<"rtm/subscription/info">>,
@@ -311,10 +307,10 @@ parse_subscription_decoded(#{
 parse_subscription_decoded(#{
   <<"action">> := <<"rtm/subscription/error">>,
   <<"body">> := #{
-    <<"error">> := ErrorName,
-    <<"reason">> := ErrorReason,
-    <<"next">> := Position,
-    <<"subscription_id">> := SubscriptionId} = ErrorBody}) ->
+  <<"error">> := ErrorName,
+  <<"reason">> := ErrorReason,
+  <<"next">> := Position,
+  <<"subscription_id">> := SubscriptionId} = ErrorBody}) ->
   MissedMessageCount = get_missed_message_count(ErrorBody),
   {error, {Position, {ErrorName, ErrorReason, MissedMessageCount}, SubscriptionId}};
 parse_subscription_decoded(#{<<"action">> := _NonSubscriptionAction} = OtherResponse) ->
@@ -386,16 +382,18 @@ read_response_decoded(RequestId, #{
   <<"action">> := <<"rtm/read/error">>,
   <<"id">> := RequestId,
   <<"body">> := #{<<"error">> := Error, <<"reason">> := Reason}}) ->
-  {ok, {Error, Reason}}.
+  {error, {Error, Reason}};
+read_response_decoded(_RequestId, #{<<"action">> := _NonReadAction} = UnexpectedResponse)->
+  {other, UnexpectedResponse}.
 
 
 %%====================================================================
 %% DELETE PDU
 %%====================================================================
 
-delete_request(RequestId, Channel) when is_list(Channel) ->
+delete_request(RequestId, Channel) when is_list(Channel)->
   delete_request(RequestId, list_to_binary(Channel));
-delete_request(RequestId, Channel) when is_binary(Channel) ->
+delete_request(RequestId, Channel) when is_binary(Channel)->
   jsxn:encode(#{<<"action">> => <<"rtm/delete">>, <<"id">> => RequestId,
     <<"body">> => #{<<"channel">> => Channel}}).
 
@@ -403,12 +401,12 @@ delete_response(RequestId, Resp) ->
   delete_response_decoded(RequestId, jsxn:decode(Resp)).
 
 delete_response_decoded(RequestId, #{
-  <<"action">> := <<"rtm/delete/ok">>,
-  <<"id">> := RequestId, <<"body">> := RespBody}) when is_map(RespBody) ->
+    <<"action">> := <<"rtm/delete/ok">>,
+    <<"id">> := RequestId, <<"body">> := RespBody}) when is_map(RespBody) ->
   Position = get_position(RespBody),
   {ok, Position};
 delete_response_decoded(RequestId,
-    #{<<"action">> := <<"rtm/publish/error">>,
+    #{<<"action">> := <<"rtm/delete/error">>,
       <<"id">> := RequestId,
       <<"body">> := #{<<"error">> := Error, <<"reason">> := Reason}}) ->
   {error, {Error, Reason}}.

@@ -10,9 +10,10 @@
 -author("iguberman").
 -behavior(gen_server).
 
--callback process_messages(Msg :: list()) -> Void :: any().
--callback process_info(Info :: tuple()) -> Void :: any().
--callback process_error(Msg :: tuple()) -> Void :: any().
+-callback process_messages(Position :: binary(), Msg :: list()) -> Void :: any().
+-callback process_info(Position :: binary(), Info :: tuple()) -> Void :: any().
+-callback process_error(Position :: binary(), Error :: tuple()) -> Void :: any().
+-callback process_error(Error :: tuple()) -> Void :: any().
 
 -record(state, {message_handler, websocket_pid, status, channel, sub_id, position, request_id}).
 
@@ -30,6 +31,7 @@
   subscribe/2,
   subscribe/3,
   unsubscribe/2,
+  read/3,
   start_link/1
 ]).
 
@@ -41,6 +43,9 @@ subscribe(Role, SubscriptionId, SQL) ->
 
 unsubscribe(Role, SubscriptionId) ->
   gen_server:cast(satori_client:subscriber_name(Role), {unsubscribe, SubscriptionId}).
+
+read(Role, Position, Channel)->
+  gen_server:cast(satori_client:subscriber_name(Role), {read, {Position, Channel}}).
 
 start_link(Role) ->
   gen_server:start_link({local, satori_client:subscriber_name(Role)}, ?MODULE, [Role], []).
@@ -79,6 +84,11 @@ handle_cast({unsubscribe, SubscriptionId} = Req,
   lager:warning("UNSUBSCRIBING ~p: ~p", [SubscriptionId, UnsubscribeReq]),
   satori_websocket:send_request(WebsocketPid, UnsubscribeReq),
   {noreply, State#state{status = unsubscribing}};
+handle_cast({read, {Position, Channel}}, #state{websocket_pid = WebsocketPid, status = subscriber, request_id = RequestId} = State)->
+  {ok, ReadReq} = satori_pdu:read_request(RequestId, Channel, Position),
+  lager:info("READ request for channel ~p at position ~p", [Channel, Position]),
+  satori_websocket:send_request(WebsocketPid, ReadReq),
+  {noreply, State};
 %% we don't expect any other type of message from satori, but publish response
 handle_cast({on_message, SubscribeResponse}, #state{status = subscribing, sub_id = SubscriptionId, request_id = RequestId} = State) ->
   case satori_pdu:parse_subscribe_response(RequestId, SubscribeResponse) of
@@ -95,15 +105,20 @@ handle_cast({on_message, SubscribeResponse}, #state{status = subscribing, sub_id
       lager:error("Unexpected Response ~p", [OtherActionResponse]),
       {noreply, State}
   end;
-handle_cast({on_message, Subscription}, #state{message_handler = MessageHandler, status = subscribed, sub_id = SubscriptionId} = State) ->
-  case satori_pdu:parse_channel_data(Subscription) of
-    {data, {_Position, Messages, SubscriptionId}} ->
-      MessageHandler:process_messages(Messages);
-    {info, {_Position, {_InfoType, _InfoReason, _MissedMessageCount} = Info, SubscriptionId}} ->
-      MessageHandler:process_info(Info);
-    {error, {_Position, {_ErrorName, _ErrorReason, _MissedMessageCount} = Error, SubscriptionId}} ->
-      MessageHandler:process_error(Error);
-    {other, OtherResponse} -> lager:error("Unexpected subscription: ~p", [OtherResponse])
+handle_cast({on_message, SubscriptionOrResponse}, #state{message_handler = MessageHandler, status = subscribed, sub_id = SubscriptionId, request_id = RequestId} = State) ->
+  case satori_pdu:parse_channel_data(SubscriptionOrResponse) of
+    {data, {Position, Messages, SubscriptionId}} ->
+      MessageHandler:process_messages(Position, Messages);
+    {info, {Position, {_InfoType, _InfoReason, _MissedMessageCount} = Info, SubscriptionId}} ->
+      MessageHandler:process_info(Position, Info);
+    {error, {Position, {_ErrorName, _ErrorReason, _MissedMessageCount} = Error, SubscriptionId}} ->
+      MessageHandler:process_error(Position, Error);
+    {other, SubscriptionOrResponse} ->
+      case satori_pdu:read_response(RequestId, SubscriptionOrResponse) of
+        {ok, {Position, Message}} -> MessageHandler:process_messages(Position, [Message]);
+        {error, {Error, Reason}} -> MessageHandler:process_error({Error, Reason});
+        {other, SubscriptionOrResponse } -> lager:error("Unexpected subscription or read response: ~p", [SubscriptionOrResponse])
+      end
   end,
   {noreply, State}.
 

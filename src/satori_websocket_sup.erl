@@ -1,6 +1,6 @@
 %%%-------------------------------------------------------------------
 %%% @author iguberman
-%%% @copyright (C) 2017, <COMPANY>
+%%% @copyright (C) 2017, Xaptum, Inc.
 %%% @doc
 %%%
 %%% @end
