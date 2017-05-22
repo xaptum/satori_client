@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 19. May 2017 12:19 AM
 %%%-------------------------------------------------------------------
--module(dummy_message_handler).
+-module(satori_dummy_message_handler).
 -author("iguberman").
 -behavior(satori_subscriber).
 

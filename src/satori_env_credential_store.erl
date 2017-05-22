@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 19. May 2017 3:51 PM
 %%%-------------------------------------------------------------------
--module(env_credential_store).
+-module(satori_env_credential_store).
 -author("iguberman").
 -behavior(satori_client).
 
