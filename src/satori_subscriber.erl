@@ -61,21 +61,21 @@ handle_call(_Request, _From, State) ->
 
 handle_cast(ready, State) ->
   {noreply, State#state{status = ready}};
-handle_cast({subscribe, Channel},
-    #state{websocket_pid = WebsocketPid, status = ready, request_id = RequestId} = State) ->
-  {ok, SubscribeReq} = satori_pdu:subscribe_request(RequestId, Channel),
-  lager:info("SUBSCRIBING to ~p: ~p", [Channel, SubscribeReq]),
-  satori_websocket:send_request(WebsocketPid, SubscribeReq),
-  {noreply, State#state{status = subscribing, sub_id = list_to_binary(Channel), channel = list_to_binary(Channel)}};
 handle_cast({subscribe, {SubscriptionId, SQL}},
     #state{websocket_pid = WebsocketPid, status = ready, request_id = RequestId} = State) ->
   {ok, SubscribeReq} = satori_pdu:view_subscribe_request(RequestId, SubscriptionId, SQL),
   lager:info("SUBSCRIBING to view ~p with SQL ~p: ~p", [SubscriptionId, SQL, SubscribeReq]),
   satori_websocket:send_request(WebsocketPid, SubscribeReq),
   {noreply, State#state{status = subscribing, sub_id = SubscriptionId}};
+handle_cast({subscribe, Channel},
+    #state{websocket_pid = WebsocketPid, status = ready, request_id = RequestId} = State) ->
+  {ok, SubscribeReq} = satori_pdu:subscribe_request(RequestId, Channel),
+  lager:info("SUBSCRIBING to ~p: ~p", [Channel, SubscribeReq]),
+  satori_websocket:send_request(WebsocketPid, SubscribeReq),
+  {noreply, State#state{status = subscribing, sub_id = list_to_binary(Channel), channel = list_to_binary(Channel)}};
 handle_cast({subscribe, _SubscribeInfo} = Req, #state{status = connecting} = State) ->
-  lager:warning("Got subscribe request while still connecting, retrying in 500ms"),
-  timer:sleep(500),
+  lager:warning("Got subscribe request while still connecting, retrying in 200ms"),
+  timer:sleep(200),
   gen_server:cast(self(), Req),
   {noreply, State};
 handle_cast({unsubscribe, SubscriptionId} = Req,
@@ -106,6 +106,7 @@ handle_cast({on_message, SubscribeResponse}, #state{status = subscribing, sub_id
       {noreply, State}
   end;
 handle_cast({on_message, SubscriptionOrResponse}, #state{message_handler = MessageHandler, status = subscribed, sub_id = SubscriptionId, request_id = RequestId} = State) ->
+  lager:info("Subscriber got message: ~p", [SubscriptionOrResponse]),
   case satori_pdu:parse_channel_data(SubscriptionOrResponse) of
     {data, {Position, Messages, SubscriptionId}} ->
       MessageHandler:process_messages(Position, Messages);

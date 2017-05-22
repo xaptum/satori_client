@@ -25,7 +25,7 @@ process_messages(Position, Messages) when is_list(Messages)->
   ok.
 
 process_info(Position, {InfoType, InfoReason, MissedMessageCount}) ->
-  ct:print("Test Subscription Info: Type ~p,  Reason ~p, MissedMessageCount ~b", [InfoType, InfoReason, MissedMessageCount]).
+  ct:print("Test Subscription Info at ~p: Type ~p,  Reason ~p, MissedMessageCount ~b", [Position, InfoType, InfoReason, MissedMessageCount]).
 
 process_error({ErrorName, ErrorReason}) ->
   ct:print("Test Read Error ~p, Reason ~p", [ErrorName, ErrorReason]).

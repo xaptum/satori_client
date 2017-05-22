@@ -20,6 +20,7 @@
   auth_response/2,
   publish_request/3,
   write_request/3,
+  get_position_from_publish_response/1,
   get_position_from_publish_response/2,
   write_response/2,
   read_request/2,
@@ -124,6 +125,21 @@ get_position_from_publish_response(RequestId, Resp) ->
   {ok, Position} = get_position_from_publish_response_decoded(RequestId, jsxn:decode(Resp)),
   Position.
 
+get_position_from_publish_response(Resp) ->
+  {ok, Position} = get_position_from_publish_response_decoded(jsxn:decode(Resp)),
+  Position.
+
+get_position_from_publish_response_decoded( #{
+  <<"action">> := <<"rtm/publish/ok">>,
+  <<"id">> := _RequestId,
+  <<"body">> := #{<<"next">> := Position}}) ->
+  {ok, Position};
+get_position_from_publish_response_decoded(#{
+  <<"action">> := <<"rtm/publish/ok">>,
+  <<"id">> := _RequestId,
+  <<"body">> := #{<<"error">> := Error, <<"reason">> := Reason}}) ->
+  {error, {Error, Reason}}.
+
 get_position_from_publish_response_decoded(RequestId, #{
   <<"action">> := <<"rtm/publish/ok">>,
   <<"id">> := RequestId,
@@ -165,11 +181,15 @@ subscribe_request(RequestId, ParamsMap) when is_map(ParamsMap) ->
   Body = maps:from_list([valid_body_parameter(Key, ParamsMap) || Key <- maps:keys(ParamsMap)]),
   {ok, jsxn:encode(RequestMap#{<<"body">> => Body})}.  %% make sure channel = subscription_id
 
-view_subscribe_request(RequestId, SubscriptionId, SQL) when is_integer(RequestId), is_list(SubscriptionId), is_list(SQL) ->
+view_subscribe_request(RequestId, SubscriptionId, SQL) when is_integer(RequestId), is_list(SubscriptionId) ->
+  view_subscribe_request(RequestId, list_to_binary(SubscriptionId), SQL);
+view_subscribe_request(RequestId, SubscriptionId, SQL) when is_integer(RequestId), is_list(SQL) ->
+  view_subscribe_request(RequestId, SubscriptionId, list_to_binary(SQL));
+view_subscribe_request(RequestId, SubscriptionId, SQL) when is_integer(RequestId), is_binary(SubscriptionId), is_binary(SQL) ->
   RequestMap = subscribe_header(RequestId),
-  {ok, jsxn:encode(RequestMap#{<<"body">> => #{<<"subscription_id">> => SubscriptionId, <<"filter">> => SQL}})}.
+  {ok, jsxn:encode(RequestMap#{<<"body">> => #{<<"channel">> => SubscriptionId, <<"subscription_id">> => SubscriptionId, <<"filter">> => SQL}})}.
 
-view_subscribe_request(RequestId, #{subscription_id := _SubscriptionId, filter := _SQL} = ParamsMap) ->
+view_subscribe_request(RequestId, #{subscription_id := SubscriptionId, filter := SQL} = ParamsMap) when is_binary(SubscriptionId), is_binary(SQL) ->
   RequestMap = subscribe_header(RequestId),
   Body = maps:from_list([valid_body_parameter(Key, ParamsMap) || Key <- maps:keys(ParamsMap)]),
   {ok, jsxn:encode(RequestMap#{<<"body">> => Body})}.  %% make sure channel = subscription_id
@@ -225,19 +245,19 @@ parse_subscribe_response_decoded(RequestId,
     #{<<"action">> := <<"rtm/subscribe/ok">>,
       <<"id">> := RequestId,
       <<"body">> := #{<<"next">> := Position, <<"channel">> := Channel}}) ->
-  {ok, {Position, Channel}};
+  {ok, {binary_to_list(Position), binary_to_list(Channel)}};
 parse_subscribe_response_decoded(RequestId,
     #{<<"action">> := <<"rtm/subscribe/ok">>,
       <<"id">> := OtherRequestId,
       <<"body">> := #{<<"next">> := Position, <<"subscription_id">> := SubscriptionId}}) ->
   lager:warning("RequestId is ~p, but response requestId is ~p", [RequestId, OtherRequestId]),
-  {ok, {Position, SubscriptionId}};
+  {ok, {binary_to_list(Position), binary_to_list(SubscriptionId)}};
 parse_subscribe_response_decoded(RequestId,
     #{<<"action">> := <<"rtm/subscribe/error">>,
       <<"id">> := RequestId,
       <<"body">> := #{<<"error">> := Error, <<"subscription_id">> := SubscriptionId} = RespBody}) ->
   Reason = get_reason(RespBody),
-  {error, {{Error, Reason}, SubscriptionId}};
+  {error, {{binary_to_list(Error), binary_to_list(Reason)}, binary_to_list(SubscriptionId)}};
 parse_subscribe_response_decoded(_RequestId, #{<<"action">> := _OtherAction} = OtherActionResponse) ->
   {other, OtherActionResponse}.
 
@@ -259,7 +279,7 @@ parse_channel_data_decoded(
         <<"next">> := Position,
         <<"messages">> := Messages,
         <<"channel">> := SubscriptionId}}) ->
-  {data, {Position, Messages, SubscriptionId}};
+  {data, {binary_to_list(Position), Messages, binary_to_list(SubscriptionId)}};
 parse_channel_data_decoded(#{
   <<"action">> := <<"rtm/channel/info">>,
   <<"body">> := #{
@@ -268,7 +288,7 @@ parse_channel_data_decoded(#{
     <<"next">> := Position,
     <<"channel">> := SubscriptionId} = InfoBody}) ->
   MissedMessageCount = get_missed_message_count(InfoBody),
-  {info, {Position, {InfoType, InfoReason, MissedMessageCount}, SubscriptionId}};
+  {info, {binary_to_list(Position), {InfoType, InfoReason, MissedMessageCount}, binary_to_list(SubscriptionId)}};
 parse_channel_data_decoded(#{
   <<"action">> := <<"rtm/channel/error">>,
   <<"body">> := #{
@@ -277,7 +297,7 @@ parse_channel_data_decoded(#{
     <<"next">> := Position,
     <<"channel">> := SubscriptionId} = ErrorBody}) ->
   MissedMessageCount = get_missed_message_count(ErrorBody),
-  {error, {Position, {ErrorName, ErrorReason, MissedMessageCount}, SubscriptionId}};
+  {error, {binary_to_list(Position), {ErrorName, ErrorReason, MissedMessageCount}, binary_to_list(SubscriptionId)}};
 parse_channel_data_decoded(#{<<"action">> := _NonSubscriptionAction} = OtherResponse) ->
   {other, OtherResponse}.
 
@@ -294,7 +314,7 @@ parse_subscription_decoded(
     <<"next">> := Position,
       <<"messages">> := Messages,
       <<"channel">> := SubscriptionId}}) ->
-  {data, {Position, Messages, SubscriptionId}};
+  {data, {binary_to_list(Position), Messages, binary_to_list(SubscriptionId)}};
 parse_subscription_decoded(#{
   <<"action">> := <<"rtm/subscription/info">>,
   <<"body">> := #{
@@ -303,7 +323,7 @@ parse_subscription_decoded(#{
     <<"next">> := Position,
     <<"subscription_id">> := SubscriptionId} = InfoBody}) ->
   MissedMessageCount = get_missed_message_count(InfoBody),
-  {info, {Position, {InfoType, InfoReason, MissedMessageCount}, SubscriptionId}};
+  {info, {binary_to_list(Position), {InfoType, InfoReason, MissedMessageCount}, binary_to_list(SubscriptionId)}};
 parse_subscription_decoded(#{
   <<"action">> := <<"rtm/subscription/error">>,
   <<"body">> := #{
@@ -312,7 +332,7 @@ parse_subscription_decoded(#{
   <<"next">> := Position,
   <<"subscription_id">> := SubscriptionId} = ErrorBody}) ->
   MissedMessageCount = get_missed_message_count(ErrorBody),
-  {error, {Position, {ErrorName, ErrorReason, MissedMessageCount}, SubscriptionId}};
+  {error, {binary_to_list(Position), {ErrorName, ErrorReason, MissedMessageCount}, binary_to_list(SubscriptionId)}};
 parse_subscription_decoded(#{<<"action">> := _NonSubscriptionAction} = OtherResponse) ->
   {other, OtherResponse}.
 
@@ -339,7 +359,7 @@ parse_unsubscribe_response_decoded(RequestId,
       <<"id">> := RequestId,
       <<"body">> := #{<<"position">> := Position, <<"subscription_id">> := SubscriptionId}
     }) ->
-  {ok, {Position, SubscriptionId}};
+  {ok, {binary_to_list(Position), binary_to_list(SubscriptionId)}};
 parse_unsubscribe_response_decoded(RequestId,
     #{<<"action">> := <<"rtm/unsubscribe/error">>,
       <<"id">> := RequestId,
@@ -377,7 +397,7 @@ read_response_decoded(RequestId, #{
   <<"action">> := <<"rtm/read/ok">>,
   <<"id">> := RequestId,
   <<"body">> := #{<<"position">> := Position, <<"message">> := Message}}) ->
-  {ok, {Position, Message}};
+  {ok, {binary_to_list(Position), Message}};
 read_response_decoded(RequestId, #{
   <<"action">> := <<"rtm/read/error">>,
   <<"id">> := RequestId,
@@ -404,7 +424,7 @@ delete_response_decoded(RequestId, #{
     <<"action">> := <<"rtm/delete/ok">>,
     <<"id">> := RequestId, <<"body">> := RespBody}) when is_map(RespBody) ->
   Position = get_position(RespBody),
-  {ok, Position};
+  {ok, binary_to_list(Position)};
 delete_response_decoded(RequestId,
     #{<<"action">> := <<"rtm/delete/error">>,
       <<"id">> := RequestId,
