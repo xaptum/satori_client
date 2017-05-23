@@ -56,7 +56,8 @@ test_publisher(Config) ->
 test_subscriber(Config) ->
   TestRole = ?config(test_role, Config),
   satori_subscriber:subscribe(TestRole, TestRole,
-    "select * where species = \"elephant\" and (heart-rate > 39 or heart-rate < 15) and (breath-rate < 9 and breath-rate > 15) and (temp < 36 or temp > 38)"),
+    "select * FROM `" ++ TestRole ++ "` where species = 'elephant'"),
+%%    "select * from " ++ TestRole ++ " where species = \"elephant\" and ((heart-rate > 39 or heart-rate < 15) or (breath-rate < 9 or breath-rate > 15) or (temp < 36 or temp > 38))"),
   timer:sleep(1000),
   ok.
 
@@ -67,10 +68,10 @@ generate_message() ->
   Lat = crypto:rand_uniform(8, 73),
   Lon = crypto:rand_uniform(34, 80),
   AnimalId = crypto:rand_uniform(10000, 20000),
-  Message = #{<<"species">> => <<"elephant">>,
+  #{<<"species">> => <<"elephant">>,
     <<"heart-rate">> => HeartRate,
     <<"breath-rate">> => BreathRate,
     <<"temp">> => Temp,
     <<"location">> => #{<<"lat">> => Lat, <<"lon">> => Lon},
-    <<"animal_id">> => AnimalId},
-  jsxn:encode(Message).
+    <<"animal_id">> => AnimalId}.
+%%  jsxn:encode(Message).

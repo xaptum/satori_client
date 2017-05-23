@@ -99,9 +99,7 @@ auth_response_decoded(RequestId, #{
 
 publish_request(RequestId, Message, Channel) when is_list(Channel) ->
   publish_request(RequestId, Message, list_to_binary(Channel));
-publish_request(RequestId, Message, Channel) when is_list(Message) ->
-  publish_request(RequestId, list_to_binary(Message), Channel);
-publish_request(RequestId, Message, Channel) when is_binary(Channel), is_binary(Message) ->
+publish_request(RequestId, Message, Channel) when is_binary(Channel) ->
   publish_request(RequestId, Message, Channel, <<"rtm/publish">>).
 
 write_request(RequestId, Message, Channel) ->
@@ -112,14 +110,16 @@ publish_request(RequestId, Message, Channel, Action) when is_list(Message) ->
 publish_request(RequestId, Message, Channel, Action) when is_binary(Message) ->
   case jsxn:is_json(Message) of
     true ->
-      Req = #{<<"action">> => Action,
-        <<"id">> => RequestId,
-        <<"body">> => #{<<"channel">> => Channel, <<"message">> => Message}},
-      {ok, jsxn:encode(Req)};
+      publish_request(RequestId, jsxn:decode(Message), Channel, Action);
     false ->
       lager:error("Can't send message, it's not in valid JSON format: ~p", [Message]),
       {error, invalid_json_message}
-  end.
+  end;
+publish_request(RequestId, Message, Channel, Action) when is_map(Message) ->
+  Req = #{<<"action">> => Action,
+    <<"id">> => RequestId,
+    <<"body">> => #{<<"channel">> => Channel, <<"message">> => Message}},
+  {ok, jsxn:encode(Req)}.
 
 get_position_from_publish_response(RequestId, Resp) ->
   {ok, Position} = get_position_from_publish_response_decoded(RequestId, jsxn:decode(Resp)),
@@ -129,7 +129,7 @@ get_position_from_publish_response(Resp) ->
   {ok, Position} = get_position_from_publish_response_decoded(jsxn:decode(Resp)),
   Position.
 
-get_position_from_publish_response_decoded( #{
+get_position_from_publish_response_decoded(#{
   <<"action">> := <<"rtm/publish/ok">>,
   <<"id">> := _RequestId,
   <<"body">> := #{<<"next">> := Position}}) ->
@@ -311,9 +311,9 @@ parse_subscription(Subscription) ->
 parse_subscription_decoded(
     #{<<"action">> := <<"rtm/subscription/data">>,
       <<"body">> := #{
-    <<"next">> := Position,
-      <<"messages">> := Messages,
-      <<"channel">> := SubscriptionId}}) ->
+        <<"next">> := Position,
+        <<"messages">> := Messages,
+        <<"channel">> := SubscriptionId}}) ->
   {data, {binary_to_list(Position), Messages, binary_to_list(SubscriptionId)}};
 parse_subscription_decoded(#{
   <<"action">> := <<"rtm/subscription/info">>,
@@ -327,10 +327,10 @@ parse_subscription_decoded(#{
 parse_subscription_decoded(#{
   <<"action">> := <<"rtm/subscription/error">>,
   <<"body">> := #{
-  <<"error">> := ErrorName,
-  <<"reason">> := ErrorReason,
-  <<"next">> := Position,
-  <<"subscription_id">> := SubscriptionId} = ErrorBody}) ->
+    <<"error">> := ErrorName,
+    <<"reason">> := ErrorReason,
+    <<"next">> := Position,
+    <<"subscription_id">> := SubscriptionId} = ErrorBody}) ->
   MissedMessageCount = get_missed_message_count(ErrorBody),
   {error, {binary_to_list(Position), {ErrorName, ErrorReason, MissedMessageCount}, binary_to_list(SubscriptionId)}};
 parse_subscription_decoded(#{<<"action">> := _NonSubscriptionAction} = OtherResponse) ->
@@ -403,7 +403,7 @@ read_response_decoded(RequestId, #{
   <<"id">> := RequestId,
   <<"body">> := #{<<"error">> := Error, <<"reason">> := Reason}}) ->
   {error, {Error, Reason}};
-read_response_decoded(_RequestId, #{<<"action">> := _NonReadAction} = UnexpectedResponse)->
+read_response_decoded(_RequestId, #{<<"action">> := _NonReadAction} = UnexpectedResponse) ->
   {other, UnexpectedResponse}.
 
 
@@ -411,9 +411,9 @@ read_response_decoded(_RequestId, #{<<"action">> := _NonReadAction} = Unexpected
 %% DELETE PDU
 %%====================================================================
 
-delete_request(RequestId, Channel) when is_list(Channel)->
+delete_request(RequestId, Channel) when is_list(Channel) ->
   delete_request(RequestId, list_to_binary(Channel));
-delete_request(RequestId, Channel) when is_binary(Channel)->
+delete_request(RequestId, Channel) when is_binary(Channel) ->
   jsxn:encode(#{<<"action">> => <<"rtm/delete">>, <<"id">> => RequestId,
     <<"body">> => #{<<"channel">> => Channel}}).
 
@@ -421,8 +421,8 @@ delete_response(RequestId, Resp) ->
   delete_response_decoded(RequestId, jsxn:decode(Resp)).
 
 delete_response_decoded(RequestId, #{
-    <<"action">> := <<"rtm/delete/ok">>,
-    <<"id">> := RequestId, <<"body">> := RespBody}) when is_map(RespBody) ->
+  <<"action">> := <<"rtm/delete/ok">>,
+  <<"id">> := RequestId, <<"body">> := RespBody}) when is_map(RespBody) ->
   Position = get_position(RespBody),
   {ok, binary_to_list(Position)};
 delete_response_decoded(RequestId,

@@ -72,7 +72,7 @@ handle_cast({subscribe, Channel},
   {ok, SubscribeReq} = satori_pdu:subscribe_request(RequestId, Channel),
   lager:info("SUBSCRIBING to ~p: ~p", [Channel, SubscribeReq]),
   satori_websocket:send_request(WebsocketPid, SubscribeReq),
-  {noreply, State#state{status = subscribing, sub_id = list_to_binary(Channel), channel = list_to_binary(Channel)}};
+  {noreply, State#state{status = subscribing, sub_id = Channel, channel = Channel}};
 handle_cast({subscribe, _SubscribeInfo} = Req, #state{status = connecting} = State) ->
   lager:warning("Got subscribe request while still connecting, retrying in 200ms"),
   timer:sleep(200),
@@ -96,7 +96,7 @@ handle_cast({on_message, SubscribeResponse}, #state{status = subscribing, sub_id
       lager:info("SUBSCRIBE SUCCESS at ~p for subscription_id ~p", [Position, SubscriptionId]),
       {noreply, State#state{position = Position, request_id = RequestId + 1, status = subscribed}};
     {ok, {Position, OtherSubscriptionId}} ->
-      lager:info("SUBSCRIBE SUCCESS at ~p for OTHER! subscription_id ~p", [Position, OtherSubscriptionId]),
+      lager:info("SUBSCRIBE SUCCESS at ~p for OTHER! expecting ~p but subscription_id is ~p", [Position, SubscriptionId, OtherSubscriptionId]),
       {noreply, State#state{position = Position, sub_id = OtherSubscriptionId, request_id = RequestId + 1, status = subscribed}};
     {error, {{Error, Reason}, SubscriptionId}} ->
       lager:error("Failed to parse subscribe response ~p, error: ~p", [SubscribeResponse, Error]),
@@ -121,6 +121,11 @@ handle_cast({on_message, SubscriptionOrResponse}, #state{message_handler = Messa
         {other, SubscriptionOrResponse } -> lager:error("Unexpected subscription or read response: ~p", [SubscriptionOrResponse])
       end
   end,
+  {noreply, State};
+handle_cast({on_message, _SubscriptionOrResponse} = Req, #state{status = NotSubscribedYet} = State) ->
+  lager:warning("Got message request while status is ~p, retrying in 100ms", [NotSubscribedYet]),
+  timer:sleep(100),
+  gen_server:cast(self(), Req),
   {noreply, State}.
 
 
